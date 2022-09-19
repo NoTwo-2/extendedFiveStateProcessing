@@ -5,6 +5,11 @@
 #include <chrono> // for sleep
 #include <thread> // for sleep
 
+inline bool procIDComp(const Process& p1, const Process& p2)
+{
+    return p1.id < p2.id;
+}
+
 int main(int argc, char* argv[])
 {
     // single thread processor
@@ -65,13 +70,14 @@ int main(int argc, char* argv[])
     time = 0;
 
     //keep running the loop until all processes have been added and have run to completion
-    while(processMgmt.moreProcessesComing() && processesFinished)
+    while(processMgmt.moreProcessesComing() || !processesFinished)
     {
         //Update our current time step
         ++time;
 
         //let new processes in if there are any
         processMgmt.activateProcesses(time);
+        processList.sort(procIDComp);
 
         //update the status for any active IO requests
         ioModule.ioProcessing(time);
@@ -94,11 +100,14 @@ int main(int argc, char* argv[])
             if (runningProcess)
             {
                 // if the process has an IO request at this time, submit an IO request, delete that ioEvent, and set the state to blocked
+                // cout << "IO time: " << runningProcess->ioEvents.front().time << ", Process time: " << runningProcess->processorTime << endl;
                 if (runningProcess->ioEvents.front().time == runningProcess->processorTime)
                 {
+                    processorAvailable = true;
                     ioModule.submitIORequest(time, runningProcess->ioEvents.front(), *runningProcess);
                     runningProcess->ioEvents.pop_front();
                     runningProcess->state = blocked;
+                    runningProcess = NULL;
                     stepAction = ioRequest;
                 }
                 // if the process has run for the required time, free the processor and set the done time and the state to done
@@ -107,6 +116,7 @@ int main(int argc, char* argv[])
                     processorAvailable = true;
                     runningProcess->state = done;
                     runningProcess->doneTime = time;
+                    runningProcess = NULL;
                     stepAction = complete;
                 }
                 // otherwise, continue running the program. increment its processorTime.
@@ -123,10 +133,11 @@ int main(int argc, char* argv[])
             }
             
         }
-        else
+        else if (!processList.empty())
         {
             Process * newProcess = NULL;
-            unsigned int blockedProcessID;
+            unsigned int interruptProcessID;
+            Process * interruptProcess = NULL;
             Process * blockedProcess = NULL;
             Process * readyProcess = NULL;
             list<Process>::iterator processListIterator = processList.begin();
@@ -134,9 +145,13 @@ int main(int argc, char* argv[])
             // get the ID of any interrupts
             if (!interrupts.empty())
             {
-                blockedProcessID = interrupts.front().procID;
+                interruptProcessID = interrupts.front().procID;
             }
-
+            else
+            {
+                interruptProcessID = -1;
+            }
+            
             // iterate through to find the first new process, the blocked process that matches the interrupt, and the first ready process
             do
             {
@@ -146,17 +161,22 @@ int main(int argc, char* argv[])
                 {
                     newProcess = tempProcessPointer;
                 }
-                if (!blockedProcess && processListIterator->id == blockedProcessID)
+                if (!blockedProcess && processListIterator->state == blocked)
                 {
                     blockedProcess = tempProcessPointer;
+                }
+                if (!interruptProcess && processListIterator->id == interruptProcessID && processListIterator->state == blocked)
+                {
+                    interruptProcess = tempProcessPointer;
                 }
                 if (!readyProcess && processListIterator->state == ready)
                 {
                     readyProcess = tempProcessPointer;
                 }
 
-            } while (!newProcess && !blockedProcess && !readyProcess && processListIterator++ != processList.end());
+            } while ((!newProcess || !interruptProcess || !readyProcess || !blockedProcess) && processListIterator++ != processList.end());
 
+            // cout << "DABS IN SWAHILI" << endl;
             // if we found a new arrival, move this process to the ready state
             if (newProcess)
             {
@@ -164,65 +184,70 @@ int main(int argc, char* argv[])
                 stepAction = admitNewProc;
             }
             // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
-            else if (blockedProcess)
+            else if (interruptProcess)
             {
                 interrupts.pop_front();
-                blockedProcess->state = ready;
+                interruptProcess->state = ready;
                 stepAction = handleInterrupt;
             }
             // otherwise, if we have a ready process we will move that process to the runnning state as well as incrementing the processorTime
             else if (readyProcess)
             {
+                processorAvailable = false;
                 readyProcess->state = processing;
-                runningProcess->processorTime++;
+                readyProcess->processorTime++;
+                runningProcess = readyProcess;
                 stepAction = beginRun;
+            }
+            else if (blockedProcess)
+            {
+                stepAction = noAct;
             }
             else
             {
                 processesFinished = true;
-                stepAction = complete;
             }
-            
         }
         
-
-
-
-
-
-        // Leave the below alone (at least for final submission, we are counting on the output being in expected format)
-        cout << setw(5) << time << "\t"; 
-        
-        switch(stepAction)
+        if (!processesFinished)
         {
-            case admitNewProc:
-              cout << "[  admit]\t";
-              break;
-            case handleInterrupt:
-              cout << "[ inrtpt]\t";
-              break;
-            case beginRun:
-              cout << "[  begin]\t";
-              break;
-            case continueRun:
-              cout << "[contRun]\t";
-              break;
-            case ioRequest:
-              cout << "[  ioReq]\t";
-              break;
-            case complete:
-              cout << "[ finish]\t";
-              break;
-            case noAct:
-              cout << "[*noAct*]\t";
-              break;
+            // Leave the below alone (at least for final submission, we are counting on the output being in expected format)
+            cout << setw(5) << time << "\t"; 
+            
+            switch(stepAction)
+            {
+                case admitNewProc:
+                cout << "[  admit]\t";
+                break;
+                case handleInterrupt:
+                cout << "[ inrtpt]\t";
+                break;
+                case beginRun:
+                cout << "[  begin]\t";
+                break;
+                case continueRun:
+                cout << "[contRun]\t";
+                break;
+                case ioRequest:
+                cout << "[  ioReq]\t";
+                break;
+                case complete:
+                cout << "[ finish]\t";
+                break;
+                case noAct:
+                cout << "[*noAct*]\t";
+                break;
+            }
+
+            // You may wish to use a second vector of processes (you don't need to, but you can)
+            printProcessStates(processList); // change processList to another vector of processes if desired
+
+            this_thread::sleep_for(chrono::milliseconds(sleepDuration));
         }
-
-        // You may wish to use a second vector of processes (you don't need to, but you can)
-        printProcessStates(processList); // change processList to another vector of processes if desired
-
-        this_thread::sleep_for(chrono::milliseconds(sleepDuration));
+        
     }
 
     return 0;
 }
+
+
