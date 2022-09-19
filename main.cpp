@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
 
         //let new processes in if there are any
         processMgmt.activateProcesses(time);
-        processList.sort(procIDComp);
+        // processList.sort(procIDComp); 
 
         //update the status for any active IO requests
         ioModule.ioProcessing(time);
