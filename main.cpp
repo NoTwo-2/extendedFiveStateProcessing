@@ -4,6 +4,7 @@
 
 #include <chrono> // for sleep
 #include <thread> // for sleep
+#include <bitset> // for multicore
 
 inline bool procIDComp(const Process& p1, const Process& p2)
 {
@@ -12,16 +13,20 @@ inline bool procIDComp(const Process& p1, const Process& p2)
 
 int main(int argc, char* argv[])
 {
-    // single thread processor
-    // it's either processing something or it's not
-    bool processorAvailable = true;
+    // number of cores
+    const int NUM_OF_CORES = 4;
+
+    // single thread multicore processor (4 cores)
+    // they're either processing something or they're not
+    bitset<NUM_OF_CORES> processorsAvailable;
+    processorsAvailable.set();
     
-    // the process the processor is currently running
+    // the process processor at index (0-3) is currently running
     // NULL if there is no process running
-    Process * runningProcess = NULL;
+    Process * runningProcess[NUM_OF_CORES] = { NULL };
 
+    // this is true when all processes are completed
     bool processesFinished = false;
-
 
     // vector of processes, processes will appear here when they are created by
     // the ProcessMgmt object (in other words, automatically at the appropriate time)
@@ -89,126 +94,132 @@ int main(int argc, char* argv[])
         // - address an interrupt if there are any pending (i.e., update the state of a blocked process whose IO operation is complete)
         // - start processing a ready process if there are any ready
 
-
-        //init the stepAction, update below
-        stepAction = noAct;
-
-        //   <your code here> 
-        // check if we can keep running the processes
-        if (!processorAvailable)
+        for (int p = 0; p < NUM_OF_CORES; p++)
         {
-            if (runningProcess)
+            //init the stepAction, update below
+            stepAction = noAct;
+
+            //   <your code here> 
+            // if running a process, check if we can keep running the process on this processor
+            if (!processorsAvailable[p])
             {
-                // if the process has an IO request at this time, submit an IO request, delete that ioEvent, and set the state to blocked
-                // cout << "IO time: " << runningProcess->ioEvents.front().time << ", Process time: " << runningProcess->processorTime << endl;
-                if (runningProcess->ioEvents.front().time == runningProcess->processorTime)
+                if (runningProcess[p])
                 {
-                    processorAvailable = true;
-                    ioModule.submitIORequest(time, runningProcess->ioEvents.front(), *runningProcess);
-                    runningProcess->ioEvents.pop_front();
-                    runningProcess->state = blocked;
-                    runningProcess = NULL;
-                    stepAction = ioRequest;
+                    // if the process has an IO request at this time, submit an IO request, delete that ioEvent, and set the state to blocked
+                    // cout << "IO time: " << runningProcess->ioEvents.front().time << ", Process time: " << runningProcess->processorTime << endl;
+                    if (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
+                    {
+                        processorsAvailable[p] = true;
+                        ioModule.submitIORequest(time, runningProcess[p]->ioEvents.front(), *runningProcess[p]);
+                        runningProcess[p]->ioEvents.pop_front();
+                        runningProcess[p]->state = blocked;
+                        runningProcess[p] = NULL;
+                        stepAction = ioRequest;
+                    }
+                    // if the process has run for the required time, free the processor and set the done time and the state to done
+                    else if (runningProcess[p]->processorTime == runningProcess[p]->reqProcessorTime)
+                    {
+                        processorsAvailable[p] = true;
+                        runningProcess[p]->state = done;
+                        runningProcess[p]->doneTime = time;
+                        runningProcess[p] = NULL;
+                        stepAction = complete;
+                    }
+                    // otherwise, continue running the program. increment its processorTime.
+                    else
+                    {
+                        runningProcess[p]->processorTime++;
+                        stepAction = continueRun;
+                    }
+                    
                 }
-                // if the process has run for the required time, free the processor and set the done time and the state to done
-                else if (runningProcess->processorTime == runningProcess->reqProcessorTime)
-                {
-                    processorAvailable = true;
-                    runningProcess->state = done;
-                    runningProcess->doneTime = time;
-                    runningProcess = NULL;
-                    stepAction = complete;
-                }
-                // otherwise, continue running the program. increment its processorTime.
                 else
                 {
-                    runningProcess->processorTime++;
-                    stepAction = continueRun;
+                    cerr << "Error, unavailable processor, but no running process" << endl;
                 }
                 
             }
-            else
+            // if the processor is available and there are other processes that are ready to be run
+            // TODO: this program only check for new processes and interrupts when the processor is free. This should not be the case in a STR algorithm
+            // move some of this implementation to if the processor is running, basically implement the algorithm for this todo
+            else if (!processList.empty())
             {
-                cerr << "Error, unavailable processor, but no running process" << endl;
-            }
-            
-        }
-        else if (!processList.empty())
-        {
-            Process * newProcess = NULL;
-            unsigned int interruptProcessID;
-            Process * interruptProcess = NULL;
-            Process * blockedProcess = NULL;
-            Process * readyProcess = NULL;
-            list<Process>::iterator processListIterator = processList.begin();
+                Process * newProcess = NULL;
+                unsigned int interruptProcessID;
+                Process * interruptProcess = NULL;
+                Process * blockedProcess = NULL;
+                Process * readyProcess = NULL;
+                list<Process>::iterator processListIterator = processList.begin();
 
-            // get the ID of any interrupts
-            if (!interrupts.empty())
-            {
-                interruptProcessID = interrupts.front().procID;
-            }
-            else
-            {
-                interruptProcessID = -1;
-            }
-            
-            // iterate through to find the first new process, the blocked process that matches the interrupt, and the first ready process
-            do
-            {
-                Process * tempProcessPointer = &(*processListIterator);
+                // get the ID of any interrupts
+                if (!interrupts.empty())
+                {
+                    interruptProcessID = interrupts.front().procID;
+                }
+                else
+                {
+                    interruptProcessID = -1;
+                }
+                
+                // iterate through to find the first new process, the blocked process that matches the interrupt, and the first ready process
+                do
+                {
+                    Process * tempProcessPointer = &(*processListIterator);
 
-                if (!newProcess && processListIterator->state == newArrival)
-                {
-                    newProcess = tempProcessPointer;
-                }
-                if (!blockedProcess && processListIterator->state == blocked)
-                {
-                    blockedProcess = tempProcessPointer;
-                }
-                if (!interruptProcess && processListIterator->id == interruptProcessID && processListIterator->state == blocked)
-                {
-                    interruptProcess = tempProcessPointer;
-                }
-                if (!readyProcess && processListIterator->state == ready)
-                {
-                    readyProcess = tempProcessPointer;
-                }
+                    if (!newProcess && processListIterator->state == newArrival)
+                    {
+                        newProcess = tempProcessPointer;
+                    }
+                    if (!blockedProcess && processListIterator->state == blocked)
+                    {
+                        blockedProcess = tempProcessPointer;
+                    }
+                    if (!interruptProcess && processListIterator->id == interruptProcessID && processListIterator->state == blocked)
+                    {
+                        interruptProcess = tempProcessPointer;
+                    }
+                    if (!readyProcess && processListIterator->state == ready)
+                    {
+                        readyProcess = tempProcessPointer;
+                    }
 
-            } while ((!newProcess || !interruptProcess || !readyProcess || !blockedProcess) && processListIterator++ != processList.end());
+                } while ((!newProcess || !interruptProcess || !readyProcess || !blockedProcess) && processListIterator++ != processList.end());
 
-            // cout << "DABS IN SWAHILI" << endl;
-            // if we found a new arrival, move this process to the ready state
-            if (newProcess)
-            {
-                newProcess->state = ready;
-                stepAction = admitNewProc;
-            }
-            // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
-            else if (interruptProcess)
-            {
-                interrupts.pop_front();
-                interruptProcess->state = ready;
-                stepAction = handleInterrupt;
-            }
-            // otherwise, if we have a ready process we will move that process to the runnning state as well as incrementing the processorTime
-            else if (readyProcess)
-            {
-                processorAvailable = false;
-                readyProcess->state = processing;
-                readyProcess->processorTime++;
-                runningProcess = readyProcess;
-                stepAction = beginRun;
-            }
-            else if (blockedProcess)
-            {
-                stepAction = noAct;
-            }
-            else
-            {
-                processesFinished = true;
+                // cout << "DABS IN SWAHILI" << endl;
+                // if we found a new arrival, move this process to the ready state
+                if (newProcess)
+                {
+                    newProcess->state = ready;
+                    stepAction = admitNewProc;
+                }
+                // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
+                else if (interruptProcess)
+                {
+                    interrupts.pop_front();
+                    interruptProcess->state = ready;
+                    stepAction = handleInterrupt;
+                }
+                // otherwise, if we have a ready process we will move that process to the runnning state as well as incrementing the processorTime
+                else if (readyProcess)
+                {
+                    processorsAvailable[p] = false;
+                    readyProcess->state = processing;
+                    readyProcess->processorTime++;
+                    runningProcess[p] = readyProcess;
+                    stepAction = beginRun;
+                }
+                else if (blockedProcess)
+                {
+                    stepAction = noAct;
+                }
+                else
+                {
+                    processesFinished = true;
+                }
             }
         }
         
+        // TODO: revamp the output to better suit a multicore design
         if (!processesFinished)
         {
             // Leave the below alone (at least for final submission, we are counting on the output being in expected format)
