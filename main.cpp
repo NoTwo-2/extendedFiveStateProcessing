@@ -25,8 +25,9 @@ int main(int argc, char* argv[])
     // NULL if there is no process running
     Process * runningProcess[NUM_OF_CORES] = { NULL };
 
-    // this is true when all processes are completed
-    bool processesFinished = false;
+    // these should all be set when all processes have been completed
+    bitset<NUM_OF_CORES> coresReturnFinished;
+    coresReturnFinished.reset();
 
     // vector of processes, processes will appear here when they are created by
     // the ProcessMgmt object (in other words, automatically at the appropriate time)
@@ -53,7 +54,7 @@ int main(int argc, char* argv[])
     switch(argc)
     {
         case 1:
-            file = "./procList.txt";  // default input file
+            file = "./procList1.txt";  // default input file
             break;
         case 2:
             file = argv[1];         // file given from command line
@@ -75,8 +76,10 @@ int main(int argc, char* argv[])
     time = 0;
 
     //keep running the loop until all processes have been added and have run to completion
-    while(processMgmt.moreProcessesComing() || !processesFinished)
+    while(processMgmt.moreProcessesComing() || !coresReturnFinished.all())
     {
+        // reset this on every clock tick
+        coresReturnFinished.reset();
         //Update our current time step
         ++time;
 
@@ -96,7 +99,6 @@ int main(int argc, char* argv[])
 
         for (int p = 0; p < NUM_OF_CORES; p++)
         {
-            processesFinished = false;
             //init the stepAction, update below
             stepActions[p] = noAct;
 
@@ -197,7 +199,7 @@ int main(int argc, char* argv[])
                         stepActions[p] = complete;
                     }
                     // otherwise, if all other processors are busy, we need to check if we can admit any new or blocked processes since SRT is preemptive
-                    else if (processorsAvailable == 0 && (newProcess || interruptProcess))
+                    else if (static_cast<int>(processorsAvailable.count()) == p && (newProcess || interruptProcess))
                     {
                         processorsAvailable[p] = true;
                         runningProcess[p]->state = ready;
@@ -217,7 +219,7 @@ int main(int argc, char* argv[])
                         }
                         else
                         {
-                            cerr << "Error, terrible logic at 188 in main.cpp" << endl;
+                            cerr << "Error, terrible logic in main.cpp" << endl;
                         }
                         
                     }
@@ -275,7 +277,7 @@ int main(int argc, char* argv[])
                 }
                 else
                 {
-                    processesFinished = true;
+                    coresReturnFinished[p] = true;
                 }
             }
         }
@@ -286,35 +288,36 @@ int main(int argc, char* argv[])
         
         for (int p = 0; p < NUM_OF_CORES; p++)
         {
+            char processorName = '0' + p;
             switch(stepActions[p])
             {
                 case admitNewProc:
-                cout << "[  admit] ";
+                cout << processorName << ": [  admit] ";
                 break;
                 case handleInterrupt:
-                cout << "[ inrtpt] ";
+                cout << processorName << ": [ inrtpt] ";
                 break;
                 case beginRun:
-                cout << "[  begin] ";
+                cout << processorName << ": [  begin] ";
                 break;
                 case continueRun:
-                cout << "[contRun] ";
+                cout << processorName << ": [contRun] ";
                 break;
                 case ioRequest:
-                cout << "[  ioReq] ";
+                cout << processorName << ": [  ioReq] ";
                 break;
                 case complete:
-                cout << "[ finish] ";
+                cout << processorName << ": [ finish] ";
                 break;
                 case noAct:
-                cout << "[*noAct*] ";
+                cout << processorName << ": [*noAct*] ";
                 break;
                 case swapAffinity:
-                cout << "[ swpAff] ";
+                cout << processorName << ": [ swpAff] ";
                 break;
             }
-            cout << "\t";
         }
+        cout << "\t";
         // You may wish to use a second vector of processes (you don't need to, but you can)
         printProcessStates(processList); // change processList to another vector of processes if desired
 
