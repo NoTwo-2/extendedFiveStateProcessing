@@ -33,8 +33,6 @@ for each processor we have:
         otherwise, if there is a recource interrupt relating to a process, handle the interrupt and switch the blocked process to ready
         otherwise, if the shortest ready process has no affinity or has an affinity equal to that of the current processor:
             set affinity to current processor if needed, and begin executing the process
-        otherwise, if the shortest ready process is shorter than a currently running process on another processor:
-            switch the affinity of the shortest process to that of the processor running the process longer than the shortest process
         otherwise, if there is a ready process, switch the shortest ready process' affinity to the current processor
         otherwise, if there exists a blocked process or if there are any busy processors, take no further action
         otherwise, all processes have been finished to completion.
