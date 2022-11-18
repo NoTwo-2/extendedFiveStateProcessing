@@ -22,17 +22,17 @@ on the same processor (processor affinity)
 heres how the logic should go:
 for each processor we have:
     if we are running a process already:
-        if it needs to request something, then make the request, block the process, and free the processor
+        if the process needs to request something, then make the request, block the process, and free the processor
         otherwise, if the process has finished, set the state to finished and free the processor
-        otherwise, if any ready process has affinity for this processor or has no affinity and has a shorter execution time than the process currently running:
-            start executing the shorter process and switch the previous process to ready
-        otherwise, if all other processors are busy:
+        otherwise, if all other processors are busy and if there are new processes or any interrupts:
             if there is a new process waiting to enter the ready list, free the processor and switch the new process to ready
             otherwise, if there is a recource interrupt relating to a process, free the processor, handle the interrupt, and switch the blocked process to ready
+        otherwise:
+            if any ready process has no affinity or has affinity for this processor and has a shorter execution time than the process currently running:
+                start executing the shorter process and switch the previous process to ready
             otherwise, if the shortest ready process is shorter than a currently running process:
-                free this processor and switch the affinity of the shortest process to the processor running the process longer than the shortest process
+                free this processor and switch the affinity of the shortest process to the processor running the process that is longer than the shortest process
             otherwise, continue executing the current process.
-        otherwise, continue executing the current process.
     otherwise, if we are not doing anything:
         if there is a new process waiting to enter the ready list, switch the new process to ready
         otherwise, if there is a recource interrupt relating to a process, handle the interrupt and switch the blocked process to ready

@@ -37,7 +37,7 @@ enum State { ready, processing, blocked, newArrival, done }; // Used to track th
 
 struct Process
 {
-    Process() : id(999999), arrivalTime(-1), doneTime(-1), reqProcessorTime(0), processorTime(0), state(newArrival), lastRunOn(-1) {}
+    Process() : id(999999), arrivalTime(-1), doneTime(-1), reqProcessorTime(0), processorTime(0), state(newArrival), affinity(-1) {}
 
     unsigned int id;        // The process ID, assigned when the process is admitted to the system
 
@@ -47,7 +47,7 @@ struct Process
     long processorTime;     // Amount of processor given to this process
 
     State state; // State of the process
-    short lastRunOn; // The last processor the process was run on, -1 if it hasn't been run on any processor yet 
+    short affinity; // The last processor the process was run on, -1 if it hasn't been run on any processor yet 
 
     list<IOEvent> ioEvents;  // The IO events for this process, stored in order of the time into the process execution that they start 
 
