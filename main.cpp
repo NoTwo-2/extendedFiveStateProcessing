@@ -47,8 +47,8 @@ int main(int argc, char* argv[])
     long sleepDuration = 50;
     string file;
     stringstream ss;
-    enum stepActionEnum {noAct, admitNewProc, handleInterrupt, beginRun, continueRun, ioRequest, complete} stepAction;
-
+    enum stepActionEnum {noAct, admitNewProc, handleInterrupt, beginRun, continueRun, ioRequest, complete, swapAffinity};
+    stepActionEnum stepActions[NUM_OF_CORES];
     // Do not touch
     switch(argc)
     {
@@ -96,11 +96,82 @@ int main(int argc, char* argv[])
 
         for (int p = 0; p < NUM_OF_CORES; p++)
         {
+            processesFinished = false;
             //init the stepAction, update below
-            stepAction = noAct;
+            stepActions[p] = noAct;
 
-            //   <your code here> 
-            // if running a process, check if we can keep running the process on this processor
+            // pointers for storing the location of processes that are best sutied for each category
+            // holds first new process in process list
+            Process * newProcess = NULL;
+            unsigned int interruptProcessID;
+            // holds the first blocked process that needs to be readied because of an interrupt
+            Process * interruptProcess = NULL;
+            // holds the first blocked process in the process list
+            Process * blockedProcess = NULL;
+            // holds the process with the shortest time remaining in the process list
+            Process * shortest = NULL;
+            // holds the shortest process that has an affinity equal to that of the current processor
+            Process * shortestWithAffinity = NULL;
+            list<Process>::iterator it = processList.begin();
+
+            // get the ID of any interrupts
+            if (!interrupts.empty())
+            {
+                interruptProcessID = interrupts.front().procID;
+            }
+            else
+            {
+                interruptProcessID = -1;
+            }
+            
+            // iterate through to find the first new process, the blocked process that matches the interrupt, and the first ready process
+            do
+            {
+                // we do this to change the iterator into a regular pointer
+                Process * tempProcessPointer = &(*it);
+                // difference variables, finding remaining time for processes
+                long sWARemainingTime = 0;
+                long shortestRemainingTime = 0;
+                if (shortestWithAffinity)
+                {
+                    sWARemainingTime = shortestWithAffinity->reqProcessorTime - shortestWithAffinity->processorTime;
+                }
+                if (shortest)
+                {
+                    shortestRemainingTime = shortest->reqProcessorTime - shortest->processorTime;
+                }
+                long itRemainingTime = it->reqProcessorTime - it->processorTime;
+
+                if (!newProcess && it->state == newArrival)
+                {
+                    newProcess = tempProcessPointer;
+                }
+                if (!blockedProcess && it->state == blocked)
+                {
+                    blockedProcess = tempProcessPointer;
+                }
+                if (!interruptProcess && it->id == interruptProcessID && it->state == blocked)
+                {
+                    interruptProcess = tempProcessPointer;
+                }
+                if ((!shortestWithAffinity || sWARemainingTime > itRemainingTime) && it->state == ready && (it->affinity == p || it->affinity == -1))
+                {
+                    shortestWithAffinity = tempProcessPointer;
+                }
+                if ((!shortest || shortestRemainingTime > itRemainingTime) && it->state == ready)
+                {
+                    shortest = tempProcessPointer;
+                }
+                // cout << (it->id) << endl;
+            } while (++it != processList.end());
+
+            // if (shortest && shortestWithAffinity)
+            // {
+            //     cout << shortest->id << " " << shortestWithAffinity->id << endl;
+            // }
+            
+
+            // if we are running a process, check if we can keep running the process on this processor, or if we need to interrupt execution for any reason
             if (!processorsAvailable[p])
             {
                 if (runningProcess[p])
@@ -114,7 +185,7 @@ int main(int argc, char* argv[])
                         runningProcess[p]->ioEvents.pop_front();
                         runningProcess[p]->state = blocked;
                         runningProcess[p] = NULL;
-                        stepAction = ioRequest;
+                        stepActions[p] = ioRequest;
                     }
                     // if the process has run for the required time, free the processor and set the done time and the state to done
                     else if (runningProcess[p]->processorTime == runningProcess[p]->reqProcessorTime)
@@ -123,13 +194,38 @@ int main(int argc, char* argv[])
                         runningProcess[p]->state = done;
                         runningProcess[p]->doneTime = time;
                         runningProcess[p] = NULL;
-                        stepAction = complete;
+                        stepActions[p] = complete;
                     }
-                    // otherwise, continue running the program. increment its processorTime.
+                    // otherwise, if all other processors are busy, we need to check if we can admit any new or blocked processes since SRT is preemptive
+                    else if (processorsAvailable == 0 && (newProcess || interruptProcess))
+                    {
+                        processorsAvailable[p] = true;
+                        runningProcess[p]->state = ready;
+                        runningProcess[p] = NULL;
+                        // if we found a new arrival, move this process to the ready state
+                        if (newProcess)
+                        {
+                            newProcess->state = ready;
+                            stepActions[p] = admitNewProc;
+                        }
+                        // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
+                        else if (interruptProcess)
+                        {
+                            interrupts.pop_front();
+                            interruptProcess->state = ready;
+                            stepActions[p] = handleInterrupt;
+                        }
+                        else
+                        {
+                            cerr << "Error, terrible logic at 188 in main.cpp" << endl;
+                        }
+                        
+                    }
+                    // otherwise, we should continue executing our process
                     else
                     {
                         runningProcess[p]->processorTime++;
-                        stepAction = continueRun;
+                        stepActions[p] = continueRun;
                     }
                     
                 }
@@ -140,77 +236,42 @@ int main(int argc, char* argv[])
                 
             }
             // if the processor is available and there are other processes that are ready to be run
-            // TODO: this program only check for new processes and interrupts when the processor is free. This should not be the case in a STR algorithm
-            // move some of this implementation to if the processor is running, basically implement the algorithm for this todo
             else if (!processList.empty())
             {
-                Process * newProcess = NULL;
-                unsigned int interruptProcessID;
-                Process * interruptProcess = NULL;
-                Process * blockedProcess = NULL;
-                Process * readyProcess = NULL;
-                list<Process>::iterator processListIterator = processList.begin();
-
-                // get the ID of any interrupts
-                if (!interrupts.empty())
-                {
-                    interruptProcessID = interrupts.front().procID;
-                }
-                else
-                {
-                    interruptProcessID = -1;
-                }
-                
-                // iterate through to find the first new process, the blocked process that matches the interrupt, and the first ready process
-                do
-                {
-                    Process * tempProcessPointer = &(*processListIterator);
-
-                    if (!newProcess && processListIterator->state == newArrival)
-                    {
-                        newProcess = tempProcessPointer;
-                    }
-                    if (!blockedProcess && processListIterator->state == blocked)
-                    {
-                        blockedProcess = tempProcessPointer;
-                    }
-                    if (!interruptProcess && processListIterator->id == interruptProcessID && processListIterator->state == blocked)
-                    {
-                        interruptProcess = tempProcessPointer;
-                    }
-                    if (!readyProcess && processListIterator->state == ready)
-                    {
-                        readyProcess = tempProcessPointer;
-                    }
-
-                } while ((!newProcess || !interruptProcess || !readyProcess || !blockedProcess) && processListIterator++ != processList.end());
-
-                // cout << "DABS IN SWAHILI" << endl;
                 // if we found a new arrival, move this process to the ready state
                 if (newProcess)
                 {
                     newProcess->state = ready;
-                    stepAction = admitNewProc;
+                    stepActions[p] = admitNewProc;
                 }
                 // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
                 else if (interruptProcess)
                 {
                     interrupts.pop_front();
                     interruptProcess->state = ready;
-                    stepAction = handleInterrupt;
+                    stepActions[p] = handleInterrupt;
                 }
                 // otherwise, if we have a ready process we will move that process to the runnning state as well as incrementing the processorTime
-                else if (readyProcess)
+                else if (shortestWithAffinity)
                 {
                     processorsAvailable[p] = false;
-                    readyProcess->state = processing;
-                    readyProcess->processorTime++;
-                    runningProcess[p] = readyProcess;
-                    stepAction = beginRun;
+                    shortestWithAffinity->affinity = p;
+                    shortestWithAffinity->state = processing;
+                    shortestWithAffinity->processorTime++;
+                    runningProcess[p] = shortestWithAffinity;
+                    stepActions[p] = beginRun;
                 }
-                else if (blockedProcess)
+                // if there is still a ready process, but has an affinity of a processor that is busy, we need to take time to swap this affinity
+                // this is to simulate the inefficiency of running processes on different processors during their lifetimes
+                else if (shortest && !processorsAvailable[shortest->affinity])
                 {
-                    stepAction = noAct;
+                    shortest->affinity = p;
+                    stepActions[p] = swapAffinity;
+                }
+                // otherwise, take no action
+                else if (blockedProcess || !processorsAvailable.all())
+                {
+                    stepActions[p] = noAct;
                 }
                 else
                 {
@@ -220,42 +281,44 @@ int main(int argc, char* argv[])
         }
         
         // TODO: revamp the output to better suit a multicore design
-        if (!processesFinished)
+        // Leave the below alone (at least for final submission, we are counting on the output being in expected format)
+        cout << setw(5) << time << "\t"; 
+        
+        for (int p = 0; p < NUM_OF_CORES; p++)
         {
-            // Leave the below alone (at least for final submission, we are counting on the output being in expected format)
-            cout << setw(5) << time << "\t"; 
-            
-            switch(stepAction)
+            switch(stepActions[p])
             {
                 case admitNewProc:
-                cout << "[  admit]\t";
+                cout << "[  admit] ";
                 break;
                 case handleInterrupt:
-                cout << "[ inrtpt]\t";
+                cout << "[ inrtpt] ";
                 break;
                 case beginRun:
-                cout << "[  begin]\t";
+                cout << "[  begin] ";
                 break;
                 case continueRun:
-                cout << "[contRun]\t";
+                cout << "[contRun] ";
                 break;
                 case ioRequest:
-                cout << "[  ioReq]\t";
+                cout << "[  ioReq] ";
                 break;
                 case complete:
-                cout << "[ finish]\t";
+                cout << "[ finish] ";
                 break;
                 case noAct:
-                cout << "[*noAct*]\t";
+                cout << "[*noAct*] ";
+                break;
+                case swapAffinity:
+                cout << "[ swpAff] ";
                 break;
             }
-
-            // You may wish to use a second vector of processes (you don't need to, but you can)
-            printProcessStates(processList); // change processList to another vector of processes if desired
-
-            this_thread::sleep_for(chrono::milliseconds(sleepDuration));
+            cout << "\t";
         }
-        
+        // You may wish to use a second vector of processes (you don't need to, but you can)
+        printProcessStates(processList); // change processList to another vector of processes if desired
+
+        this_thread::sleep_for(chrono::milliseconds(sleepDuration));  
     }
 
     return 0;

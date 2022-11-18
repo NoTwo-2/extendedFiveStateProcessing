@@ -11,7 +11,7 @@ void printProcessStates(list<Process>& processVector)
                 stateChar = 'r';
                 break;
             case processing:
-                stateChar = 'p';
+                stateChar = '0' + Proc.affinity;
                 break;
             case blocked:
                 stateChar = 'b';
