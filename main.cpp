@@ -39,13 +39,16 @@ int main(int argc, char* argv[])
     // processList when they are created and ready to be run/managed
     ProcessManagement processMgmt(processList);
 
+    // this will contain all processes that have been allocated a resource on any given loop
+    vector<Process*> allocatedProcesses;
+
     // this holds the pointers to all resources which manage io operations and will raise interrupts to signal io completion
     vector<Resource> resources;
 
     // populate the resource vector
     for (int i = 0; i < NUM_OF_RESOURCES; i++)
     {
-        resources.push_back(Resource(i));
+        resources.push_back(Resource(allocatedProcesses, i));
     }
 
     // Do not touch
@@ -90,13 +93,33 @@ int main(int argc, char* argv[])
 
         //let new processes in if there are any
         processMgmt.activateProcesses(time);
-        // processList.sort(procIDComp); 
+        // processList.sort(procIDComp);
+
+        
 
         // update the status for any active IO requests
         for (int i = 0; i < NUM_OF_RESOURCES; i++)
         {
             resources[i].ioProcessing();
         }
+
+        vector<unsigned int> waitingProcesses;
+        for (int r = 0; r < NUM_OF_RESOURCES; r++)
+        {
+            resources[r].getWaitingProcesses(waitingProcesses);
+        }
+        // figure out which processes are ready to be run, block them if they are still in waiting lists
+        for (unsigned int p = 0; p < allocatedProcesses.size(); p++)
+        {
+            allocatedProcesses[p]->state = ready;
+            for (unsigned int a = 0; a < waitingProcesses.size(); a++)
+            {
+                if (allocatedProcesses[p]->id == waitingProcesses[a]) { allocatedProcesses[p]->state = blocked; }
+            }
+        }
+        
+        // we are done and ready to repopulate this list
+        allocatedProcesses.clear();
 
         //If the processor is tied up running a process, then continue running it until it is done or blocks
         //   note: be sure to check for things that should happen as the process continues to run (io, completion...)
@@ -175,10 +198,20 @@ int main(int argc, char* argv[])
                     // cout << "IO time: " << runningProcess[p]->ioEvents.front().time << ", Process time: " << runningProcess[p]->processorTime << endl;
                     if (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
                     {
+                        // loop through ioEvents to get all that come at the same time
                         while (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
                         {
-                            if (!resources[(runningProcess[p]->ioEvents.front()).resourceId].submitRequest(runningProcess[p]->ioEvents.front(), *runningProcess[p]))
+                            // submit a request for the resource corresponding to the ioEvent
+                            IOEvent thisEvent = runningProcess[p]->ioEvents.front();
+                            // if the resource isnt available, we must deallocate all of our held resources and re-request them (hold-and-wait approach 3)
+                            if (!resources[thisEvent.resourceId].submitRequest(thisEvent.id, thisEvent.dur, runningProcess[p]))
                             {
+                                // unallocate all resources
+                                for (unsigned int i = 0; i < runningProcess[p]->otherResourcesIds.size(); i++)
+                                {
+                                    resources[runningProcess[p]->otherResourcesIds[i]].unallocateResource();
+                                }
+
                                 processorsAvailable[p] = true;
                                 runningProcess[p]->state = blocked;
                             }
@@ -254,7 +287,7 @@ int main(int argc, char* argv[])
                     stepActions[p] = swapAffinity;
                 }
                 // otherwise, take no action
-                else if (blockedProcess || !processorsAvailable.all())
+                else if (blockedProcess || !processorsAvailable.all() || shortest || shortestWithAffinity)
                 {
                     stepActions[p] = noAct;
                 }

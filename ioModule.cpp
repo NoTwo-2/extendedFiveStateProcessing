@@ -4,7 +4,7 @@ void printResources(vector<Resource>& resourceVect)
 {
     for (auto & Resc : resourceVect)
     {
-        vector<int> waitListTemp;
+        vector<unsigned int> waitListTemp;
         cout << "{";
         if (Resc.isAvailable()) { cout << " "; } else { cout << Resc.getProcessId(); }
         cout << "}";
