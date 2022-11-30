@@ -336,7 +336,10 @@ int main(int argc, char* argv[])
         cout << "\t";
         // You may wish to use a second vector of processes (you don't need to, but you can)
         printProcessStates(processList); // change processList to another vector of processes if desired
+        cout << "\t";
+        printResources(resources);
 
+        cout << endl;
         this_thread::sleep_for(chrono::milliseconds(sleepDuration));  
     }
 

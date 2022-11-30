@@ -67,7 +67,16 @@ class Resource
             return success;
         }
 
-        // inline bool isAvailable() { return m_available; }
+        inline bool isAvailable() { return m_available; }
+        inline int getProcessId() { return m_pending.first.second.procID; }
+        inline void getWaitingProcesses(vector<int>& waiting)
+        {
+            list<pair<pair<int, IOInterrupt>, Process*>>::iterator it;
+            for (it = m_waitingList.begin(); it != m_waitingList.end(); ++it)
+            {
+                waiting.push_back(it->first.second.procID);
+            }
+        }
 
     private:
         list<IOInterrupt>& m_intVec;        // the vector with interrupts that need to be addressed in main
@@ -77,6 +86,8 @@ class Resource
         list<pair<pair<int, IOInterrupt>, Process*>> m_waitingList;
         unsigned int m_resourceId;
 };
+
+void printResources(vector<Resource>& resourceVect);
 
 // class ResourceModule
 // {

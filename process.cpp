@@ -25,7 +25,6 @@ void printProcessStates(list<Process>& processVector)
         }
         cout << stateChar << ' ';
     }
-    cout << endl;
 }
 
 void printProcessSet(vector<Process>& processVector)
