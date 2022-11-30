@@ -15,6 +15,10 @@ int main(int argc, char* argv[])
 {
     // number of cores
     const int NUM_OF_CORES = 4;
+    // number of resources
+    const int NUM_OF_RESOURCES = 4;
+    // resource process times for each resource
+    const long RESOURCE_PROC_TIMES[NUM_OF_RESOURCES] = { 5, 10, 7, 2 };
 
     // single thread multicore processor (4 cores)
     // they're either processing something or they're not
@@ -38,10 +42,16 @@ int main(int argc, char* argv[])
     ProcessManagement processMgmt(processList);
 
     // this is where interrupts will appear when the ioModule detects that an IO operation is complete
-    list<IOInterrupt> interrupts;   
+    list<IOInterrupt> interrupts;
 
-    // this manages io operations and will raise interrupts to signal io completion
-    IOModule ioModule(interrupts);  
+    // this holds the pointers to all resources which manage io operations and will raise interrupts to signal io completion
+    vector<Resource> resources;
+
+    // populate the resource vector
+    for (int i = 0; i < NUM_OF_RESOURCES; i++)
+    {
+        resources.push_back(Resource(interrupts, i, RESOURCE_PROC_TIMES[i]));
+    }
 
     // Do not touch
     long time = 1;
@@ -87,8 +97,11 @@ int main(int argc, char* argv[])
         processMgmt.activateProcesses(time);
         // processList.sort(procIDComp); 
 
-        //update the status for any active IO requests
-        ioModule.ioProcessing(time);
+        // update the status for any active IO requests
+        for (int i = 0; i < NUM_OF_RESOURCES; i++)
+        {
+            resources[i].ioProcessing(time);
+        }
 
         //If the processor is tied up running a process, then continue running it until it is done or blocks
         //   note: be sure to check for things that should happen as the process continues to run (io, completion...)
@@ -178,12 +191,16 @@ int main(int argc, char* argv[])
             {
                 if (runningProcess[p])
                 {
+                    // TODO: DEADLOCK PREVENTION: GET ON IT!!
+                    // processes need to keep track of the resource they are requesting, resources need to keep track of the processes that are requesting them
                     // if the process has an IO request at this time, submit an IO request, delete that ioEvent, and set the state to blocked
                     // cout << "IO time: " << runningProcess->ioEvents.front().time << ", Process time: " << runningProcess->processorTime << endl;
                     if (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
                     {
+                        IOEvent* newEvent = &(runningProcess[p]->ioEvents.front());
+                        resources[newEvent->resourceId].submitIORequest(time, runningProcess[p]->ioEvents.front(), *runningProcess[p]);
+                        
                         processorsAvailable[p] = true;
-                        ioModule.submitIORequest(time, runningProcess[p]->ioEvents.front(), *runningProcess[p]);
                         runningProcess[p]->ioEvents.pop_front();
                         runningProcess[p]->state = blocked;
                         runningProcess[p] = NULL;
