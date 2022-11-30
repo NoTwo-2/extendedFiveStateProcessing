@@ -33,6 +33,7 @@ class Resource
                 {
                     cout << "waitlist not empty, allocating to next in line" << endl;
                     m_pending = m_waitingList.front();
+                    // if (m_waitingList.front().second->)
                     m_waitingList.front().second->state = ready;
                     m_waitingList.front().second->otherResourcesIds.push_back(m_resourceId);
                     m_waitingList.pop_front();
