@@ -24,13 +24,13 @@ using namespace std;
 
 struct IOEvent
 {
-    IOEvent() :  id(9999999), time(-1), duration(0) {};
-    IOEvent(const int& t, const int& d, const unsigned int& newId) : id(newId), time(t), duration(d)  {}
+    IOEvent() :  id(9999999), time(-1), resourceId(99999) {};
+    IOEvent(const int& t, const unsigned int& newId, const unsigned int& recId) : id(newId), time(t), resourceId(recId) {}
 
     unsigned int id;
 
-    long time;       // The time the event occurs during the process execution
-    long duration;   // The duration that the process will be Blocked by this IOEvent
+    long time;                  // The time the event occurs during the process execution
+    unsigned int resourceId;    // The id of the resource associated with this request
 };
 
 enum State { ready, processing, blocked, newArrival, done }; // Used to track the process states
@@ -61,7 +61,7 @@ struct Process
 
         for (auto & event : ioEvents)
         {
-            cout << " " << event.time << ", " << event.duration << ";";
+            cout << " " << event.time << ", " << event.resourceId << ";";
         }
 
         cout << endl;
