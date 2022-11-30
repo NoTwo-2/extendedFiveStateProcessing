@@ -39,16 +39,13 @@ int main(int argc, char* argv[])
     // processList when they are created and ready to be run/managed
     ProcessManagement processMgmt(processList);
 
-    // this is where interrupts will appear when the ioModule detects that an IO operation is complete
-    list<IOInterrupt> interrupts;
-
     // this holds the pointers to all resources which manage io operations and will raise interrupts to signal io completion
     vector<Resource> resources;
 
     // populate the resource vector
     for (int i = 0; i < NUM_OF_RESOURCES; i++)
     {
-        resources.push_back(Resource(interrupts, i));
+        resources.push_back(Resource(i));
     }
 
     // Do not touch
@@ -116,9 +113,6 @@ int main(int argc, char* argv[])
             // pointers for storing the location of processes that are best sutied for each category
             // holds first new process in process list
             Process * newProcess = NULL;
-            unsigned int interruptProcessID;
-            // holds the first blocked process that needs to be readied because of an interrupt
-            Process * interruptProcess = NULL;
             // holds the first blocked process in the process list
             Process * blockedProcess = NULL;
             // holds the process with the shortest time remaining in the process list
@@ -126,16 +120,6 @@ int main(int argc, char* argv[])
             // holds the shortest process that has an affinity equal to that of the current processor
             Process * shortestWithAffinity = NULL;
             list<Process>::iterator it = processList.begin();
-
-            // get the ID of any interrupts
-            if (!interrupts.empty())
-            {
-                interruptProcessID = interrupts.front().procID;
-            }
-            else
-            {
-                interruptProcessID = -1;
-            }
             
             // iterate through to find the first new process, the blocked process that matches the interrupt, and the first ready process
             do
@@ -162,10 +146,6 @@ int main(int argc, char* argv[])
                 if (!blockedProcess && it->state == blocked)
                 {
                     blockedProcess = tempProcessPointer;
-                }
-                if (!interruptProcess && it->id == interruptProcessID && it->state == blocked)
-                {
-                    interruptProcess = tempProcessPointer;
                 }
                 if ((!shortestWithAffinity || sWARemainingTime > itRemainingTime) && it->state == ready && (it->affinity == p || it->affinity == -1))
                 {
@@ -197,7 +177,7 @@ int main(int argc, char* argv[])
                     {
                         while (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
                         {
-                            if (!resources[(runningProcess[p]->ioEvents.front()).resourceId].submitIORequest(runningProcess[p]->ioEvents.front(), *runningProcess[p]))
+                            if (!resources[(runningProcess[p]->ioEvents.front()).resourceId].submitRequest(runningProcess[p]->ioEvents.front(), *runningProcess[p]))
                             {
                                 processorsAvailable[p] = true;
                                 runningProcess[p]->state = blocked;
@@ -216,7 +196,7 @@ int main(int argc, char* argv[])
                         stepActions[p] = complete;
                     }
                     // otherwise, if all other processors are busy, we need to check if we can admit any new or blocked processes since SRT is preemptive
-                    else if (static_cast<int>(processorsAvailable.count()) == p && (newProcess || interruptProcess))
+                    else if (static_cast<int>(processorsAvailable.count()) == p && newProcess)
                     {
                         processorsAvailable[p] = true;
                         runningProcess[p]->state = ready;
@@ -226,13 +206,6 @@ int main(int argc, char* argv[])
                         {
                             newProcess->state = ready;
                             stepActions[p] = admitNewProc;
-                        }
-                        // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
-                        else if (interruptProcess)
-                        {
-                            interrupts.pop_front();
-                            interruptProcess->state = ready;
-                            stepActions[p] = handleInterrupt;
                         }
                         else
                         {
@@ -262,13 +235,6 @@ int main(int argc, char* argv[])
                 {
                     newProcess->state = ready;
                     stepActions[p] = admitNewProc;
-                }
-                // otherwise, if we have an interupt, remove the interrupt from the interrupt list and move the process to the ready state 
-                else if (interruptProcess)
-                {
-                    interrupts.pop_front();
-                    interruptProcess->state = ready;
-                    stepActions[p] = handleInterrupt;
                 }
                 // otherwise, if we have a ready process we will move that process to the runnning state as well as incrementing the processorTime
                 else if (shortestWithAffinity)

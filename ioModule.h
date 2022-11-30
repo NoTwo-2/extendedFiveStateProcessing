@@ -6,29 +6,32 @@ using namespace std;
 
 #include "process.h"
 
-struct IOInterrupt
+struct ResourceRequest
 {
-    IOInterrupt() : ioEventID(99999), procID(99999), resourceID(99999) {};
-    IOInterrupt(const unsigned int& eId, const unsigned int& pId, const unsigned int& rId) : ioEventID(eId), procID(pId), resourceID(rId) {};
+    ResourceRequest() : ioEventID(99999), procID(99999), resourceID(99999), requiredTime(0), elapsedTime(0) {};
+    ResourceRequest(const unsigned int& eId, const unsigned int& pId, const unsigned int& rId, const unsigned int& reqT) : 
+        ioEventID(eId), procID(pId), resourceID(rId), requiredTime(reqT), elapsedTime(0) {};
 
     unsigned int ioEventID;
     unsigned int procID;
     unsigned int resourceID;
+
+    long requiredTime;  // time this particular request needs to be running with the process
+    long elapsedTime;   // time this request has been served
 };
 
 class Resource
 {
     public:
-        Resource(list<IOInterrupt>& ioIntVec, const unsigned int& rId) : m_intVec(ioIntVec), m_resourceId(rId) {};
+        Resource(const unsigned int& rId) : m_resourceId(rId) {};
 
         inline void ioProcessing()
         {
             // ( ( time_remaining, IOInterrupt ), Process )
             // cout << curTimeStep << " " << m_pending.first << endl;
-            if (m_pending.second && m_pending.second->state == processing) { m_pending.first.first--; }
-            if (m_pending.second && m_pending.first.first == 0)
+            if (m_pending.second && m_pending.second->state == processing) { m_pending.first.elapsedTime++; }
+            if (m_pending.second && m_pending.first.elapsedTime == m_pending.first.requiredTime)
             {
-                m_intVec.push_back(m_pending.first.second);
                 if (!m_waitingList.empty())
                 {
                     cout << "waitlist not empty, allocating to next in line" << endl;
@@ -46,13 +49,13 @@ class Resource
             }
         }
 
-        bool submitIORequest(IOEvent& ioEvent, Process& proc)
+        bool submitRequest(IOEvent& ioEvent, Process& proc)
         {
             bool success;
             if (m_available)
             {
                 cout << "resource available, processing request..." << endl;
-                m_pending = make_pair(make_pair(ioEvent.dur, IOInterrupt(ioEvent.id, proc.id, m_resourceId)), &proc);
+                m_pending = make_pair(ResourceRequest(ioEvent.id, proc.id, m_resourceId, ioEvent.dur), &proc);
                 proc.otherResourcesIds.push_back(m_resourceId);
                 m_available = false;
 
@@ -61,7 +64,7 @@ class Resource
             else
             {
                 cout << "resource is unavailable, adding to wait list" << endl;
-                m_waitingList.push_back(make_pair(make_pair(ioEvent.dur, IOInterrupt(ioEvent.id, proc.id, m_resourceId)), &proc));
+                m_waitingList.push_back(make_pair(ResourceRequest(ioEvent.id, proc.id, m_resourceId, ioEvent.dur), &proc));
 
                 success = false;
             }
@@ -69,22 +72,21 @@ class Resource
         }
 
         inline bool isAvailable() { return m_available; }
-        inline int getProcessId() { return m_pending.first.second.procID; }
+        inline int getProcessId() { return m_pending.first.procID; }
         inline void getWaitingProcesses(vector<int>& waiting)
         {
-            list<pair<pair<int, IOInterrupt>, Process*>>::iterator it;
+            list<pair<ResourceRequest, Process*>>::iterator it;
             for (it = m_waitingList.begin(); it != m_waitingList.end(); ++it)
             {
-                waiting.push_back(it->first.second.procID);
+                waiting.push_back(it->first.procID);
             }
         }
 
     private:
-        list<IOInterrupt>& m_intVec;        // the vector with interrupts that need to be addressed in main
-        pair<pair<int, IOInterrupt>, Process*> m_pending;   // the io request to this vector that needs to be serviced
+        pair<ResourceRequest, Process*> m_pending;   // the io request to this vector that needs to be serviced
 
         bool m_available = true;
-        list<pair<pair<int, IOInterrupt>, Process*>> m_waitingList;
+        list<pair<ResourceRequest, Process*>> m_waitingList;
         unsigned int m_resourceId;
 };
 
