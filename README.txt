@@ -36,3 +36,14 @@ for each processor we have:
         otherwise, if there is a ready process, switch the shortest ready process' affinity to the current processor
         otherwise, if there exists a blocked process or if there are any busy processors, take no further action
         otherwise, all processes have been finished to completion.
+
+resources:
+ideas:
+new class:
+    resources defined by script, inputted via programList and instances are created at runtime
+    resources defined in main.cpp, instances created at runtime <- i think i wanna do this one
+coded into main:
+    probably shouldnt do this
+
+
+algorithm for deadlock:
