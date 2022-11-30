@@ -17,8 +17,6 @@ int main(int argc, char* argv[])
     const int NUM_OF_CORES = 4;
     // number of resources
     const int NUM_OF_RESOURCES = 4;
-    // resource process times for each resource
-    const long RESOURCE_PROC_TIMES[NUM_OF_RESOURCES] = { 5, 10, 7, 2 };
 
     // single thread multicore processor (4 cores)
     // they're either processing something or they're not
@@ -50,7 +48,7 @@ int main(int argc, char* argv[])
     // populate the resource vector
     for (int i = 0; i < NUM_OF_RESOURCES; i++)
     {
-        resources.push_back(Resource(interrupts, i, RESOURCE_PROC_TIMES[i]));
+        resources.push_back(Resource(interrupts, i));
     }
 
     // Do not touch
@@ -58,7 +56,7 @@ int main(int argc, char* argv[])
     long sleepDuration = 50;
     string file;
     stringstream ss;
-    enum stepActionEnum {noAct, admitNewProc, handleInterrupt, beginRun, continueRun, ioRequest, complete, swapAffinity};
+    enum stepActionEnum {noAct, admitNewProc, handleInterrupt, beginRun, continueRun, resourceRequest, complete, swapAffinity};
     stepActionEnum stepActions[NUM_OF_CORES];
     // Do not touch
     switch(argc)
@@ -100,7 +98,7 @@ int main(int argc, char* argv[])
         // update the status for any active IO requests
         for (int i = 0; i < NUM_OF_RESOURCES; i++)
         {
-            resources[i].ioProcessing(time);
+            resources[i].ioProcessing();
         }
 
         //If the processor is tied up running a process, then continue running it until it is done or blocks
@@ -184,7 +182,7 @@ int main(int argc, char* argv[])
             // {
             //     cout << shortest->id << " " << shortestWithAffinity->id << endl;
             // }
-            
+
 
             // if we are running a process, check if we can keep running the process on this processor, or if we need to interrupt execution for any reason
             if (!processorsAvailable[p])
@@ -193,18 +191,20 @@ int main(int argc, char* argv[])
                 {
                     // TODO: DEADLOCK PREVENTION: GET ON IT!!
                     // processes need to keep track of the resource they are requesting, resources need to keep track of the processes that are requesting them
-                    // if the process has an IO request at this time, submit an IO request, delete that ioEvent, and set the state to blocked
-                    // cout << "IO time: " << runningProcess->ioEvents.front().time << ", Process time: " << runningProcess->processorTime << endl;
+                    // if the process has an IO request at this time, submit a resource request, delete that ioEvent, and block the process if it needs to be blocked
+                    // cout << "IO time: " << runningProcess[p]->ioEvents.front().time << ", Process time: " << runningProcess[p]->processorTime << endl;
                     if (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
                     {
-                        IOEvent* newEvent = &(runningProcess[p]->ioEvents.front());
-                        resources[newEvent->resourceId].submitIORequest(time, runningProcess[p]->ioEvents.front(), *runningProcess[p]);
-                        
-                        processorsAvailable[p] = true;
-                        runningProcess[p]->ioEvents.pop_front();
-                        runningProcess[p]->state = blocked;
-                        runningProcess[p] = NULL;
-                        stepActions[p] = ioRequest;
+                        while (runningProcess[p]->ioEvents.front().time == runningProcess[p]->processorTime)
+                        {
+                            if (!resources[(runningProcess[p]->ioEvents.front()).resourceId].submitIORequest(runningProcess[p]->ioEvents.front(), *runningProcess[p]))
+                            {
+                                processorsAvailable[p] = true;
+                                runningProcess[p]->state = blocked;
+                            }
+                            runningProcess[p]->ioEvents.pop_front();
+                        }
+                        stepActions[p] = resourceRequest;
                     }
                     // if the process has run for the required time, free the processor and set the done time and the state to done
                     else if (runningProcess[p]->processorTime == runningProcess[p]->reqProcessorTime)
@@ -298,8 +298,7 @@ int main(int argc, char* argv[])
                 }
             }
         }
-        
-        // TODO: revamp the output to better suit a multicore design
+
         // Leave the below alone (at least for final submission, we are counting on the output being in expected format)
         cout << setw(5) << time << "\t"; 
         
@@ -320,8 +319,8 @@ int main(int argc, char* argv[])
                 case continueRun:
                 cout << processorName << ": [contRun] ";
                 break;
-                case ioRequest:
-                cout << processorName << ": [  ioReq] ";
+                case resourceRequest:
+                cout << processorName << ": [rescReq] ";
                 break;
                 case complete:
                 cout << processorName << ": [ finish] ";

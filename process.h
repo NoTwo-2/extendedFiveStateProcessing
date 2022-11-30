@@ -25,11 +25,12 @@ using namespace std;
 struct IOEvent
 {
     IOEvent() :  id(9999999), time(-1), resourceId(99999) {};
-    IOEvent(const int& t, const unsigned int& newId, const unsigned int& recId) : id(newId), time(t), resourceId(recId) {}
+    IOEvent(const int& t, const unsigned int& duration, const unsigned int& newId, const unsigned int& recId) : id(newId), time(t), dur(duration), resourceId(recId) {}
 
     unsigned int id;
 
     long time;                  // The time the event occurs during the process execution
+    int dur;                   // how long the resource will be held for
     unsigned int resourceId;    // The id of the resource associated with this request
 };
 
@@ -47,6 +48,7 @@ struct Process
     long processorTime;     // Amount of processor given to this process
 
     State state; // State of the process
+    vector<int> otherResourcesIds; // resources this process has allocated to it
     short affinity; // The last processor the process was run on, -1 if it hasn't been run on any processor yet 
 
     list<IOEvent> ioEvents;  // The IO events for this process, stored in order of the time into the process execution that they start 

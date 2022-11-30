@@ -19,42 +19,63 @@ struct IOInterrupt
 class Resource
 {
     public:
-        Resource(list<IOInterrupt>& ioIntVec, const unsigned int& rId, const unsigned long& dur) : m_intVec(ioIntVec), m_resourceId(rId), m_duration(dur) {};
+        Resource(list<IOInterrupt>& ioIntVec, const unsigned int& rId) : m_intVec(ioIntVec), m_resourceId(rId) {};
 
-        inline void ioProcessing(const int& curTimeStep)
+        inline void ioProcessing()
         {
-            if(curTimeStep == m_pending.first)
+            // ( ( time_remaining, IOInterrupt ), Process )
+            // cout << curTimeStep << " " << m_pending.first << endl;
+            if (m_pending.second && m_pending.second->state == processing) { m_pending.first.first--; }
+            if (m_pending.second && m_pending.first.first == 0)
             {
-                m_intVec.push_back(m_pending.second);
-                
-                m_available = true;
+                m_intVec.push_back(m_pending.first.second);
+                if (!m_waitingList.empty())
+                {
+                    cout << "waitlist not empty, allocating to next in line" << endl;
+                    m_pending = m_waitingList.front();
+                    m_waitingList.front().second->state = ready;
+                    m_waitingList.front().second->otherResourcesIds.push_back(m_resourceId);
+                    m_waitingList.pop_front();
+                }
+                else
+                {
+                    cout << "waitlist empty, resource available" << endl;
+                    m_available = true;
+                }
             }
         }
 
-        void submitIORequest(const int& curTimeStep, IOEvent& ioEvent, Process& proc)
+        bool submitIORequest(IOEvent& ioEvent, Process& proc)
         {
+            bool success;
             if (m_available)
             {
-                m_pending = make_pair(curTimeStep + m_duration, IOInterrupt(ioEvent.id, proc.id, m_resourceId));
+                cout << "resource available, processing request..." << endl;
+                m_pending = make_pair(make_pair(ioEvent.dur, IOInterrupt(ioEvent.id, proc.id, m_resourceId)), &proc);
+                proc.otherResourcesIds.push_back(m_resourceId);
                 m_available = false;
+
+                success = true;
             }
             else
             {
-                m_waitingList.push_back(proc);
+                cout << "resource is unavailable, adding to wait list" << endl;
+                m_waitingList.push_back(make_pair(make_pair(ioEvent.dur, IOInterrupt(ioEvent.id, proc.id, m_resourceId)), &proc));
+
+                success = false;
             }
-            
+            return success;
         }
 
         // inline bool isAvailable() { return m_available; }
 
     private:
         list<IOInterrupt>& m_intVec;        // the vector with interrupts that need to be addressed in main
-        pair<int, IOInterrupt> m_pending;   // the io request to this vector that needs to be serviced
+        pair<pair<int, IOInterrupt>, Process*> m_pending;   // the io request to this vector that needs to be serviced
 
-        bool m_available = false;
-        list<Process> m_waitingList;
+        bool m_available = true;
+        list<pair<pair<int, IOInterrupt>, Process*>> m_waitingList;
         unsigned int m_resourceId;
-        unsigned long m_duration;
 };
 
 // class ResourceModule

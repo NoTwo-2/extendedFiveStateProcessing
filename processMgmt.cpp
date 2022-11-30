@@ -7,7 +7,7 @@ void ProcessManagement::readProcessFile(const string& fname)
     string line, strItem;
     Process proc;
     unsigned int ioIDctrl(0), procIDctrl(0);
-    int ioTime, ioDur;
+    int ioTime, dur, rescReq;
 
     m_pending.clear();
 
@@ -34,9 +34,9 @@ void ProcessManagement::readProcessFile(const string& fname)
         proc.ioEvents.clear();
         while(ss >> ioTime)
         {
-            ss >> ioDur;
-
-            proc.ioEvents.push_back(IOEvent(ioTime, ioDur, ioIDctrl));
+            ss >> dur;
+            ss >> rescReq;
+            proc.ioEvents.push_back(IOEvent(ioTime, dur, ioIDctrl, rescReq));
             ++ioIDctrl;
         }
         proc.ioEvents.sort(ioComp);
