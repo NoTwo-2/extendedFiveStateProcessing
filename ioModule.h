@@ -8,13 +8,12 @@ using namespace std;
 
 struct ResourceRequest
 {
-    ResourceRequest() : ioEventID(99999), procID(99999), resourceID(99999), requiredTime(0), elapsedTime(0) {};
-    ResourceRequest(const unsigned int& eId, const unsigned int& pId, const unsigned int& rId, const unsigned int& reqT) : 
-        ioEventID(eId), procID(pId), resourceID(rId), requiredTime(reqT), elapsedTime(0) {};
+    ResourceRequest() : ioEventID(99999), procID(99999), requiredTime(0), elapsedTime(0) {};
+    ResourceRequest(const unsigned int& eId, const unsigned int& pId, const unsigned int& reqT) : 
+        ioEventID(eId), procID(pId), requiredTime(reqT), elapsedTime(0) {};
 
     unsigned int ioEventID;
     unsigned int procID;
-    unsigned int resourceID;
 
     long requiredTime;  // time this particular request needs to be running with the process
     long elapsedTime;   // time this request has been served
@@ -23,57 +22,55 @@ struct ResourceRequest
 class Resource
 {
     public:
-        Resource(const unsigned int& rId) : m_resourceId(rId) {};
+        Resource(vector<Process*>& allocatedProcessList, const unsigned int& rId) : m_resourceId(rId), m_allocatedProcesses(allocatedProcessList) {};
 
         inline void ioProcessing()
         {
             // ( ( time_remaining, IOInterrupt ), Process )
             // cout << curTimeStep << " " << m_pending.first << endl;
+            // if the process isnt blocked, increment the resources time spent
             if (m_pending.second && m_pending.second->state == processing) { m_pending.first.elapsedTime++; }
-            if (m_pending.second && m_pending.first.elapsedTime == m_pending.first.requiredTime)
+            
+            // if the resources time spent is equal to the required time, we want to free this resource
+            if (m_pending.second && m_pending.second->state == processing && m_pending.first.elapsedTime == m_pending.first.requiredTime)
             {
-                if (!m_waitingList.empty())
-                {
-                    cout << "waitlist not empty, allocating to next in line" << endl;
-                    m_pending = m_waitingList.front();
-                    // if (m_waitingList.front().second->)
-                    m_waitingList.front().second->state = ready;
-                    m_waitingList.front().second->otherResourcesIds.push_back(m_resourceId);
-                    m_waitingList.pop_front();
-                }
-                else
-                {
-                    cout << "waitlist empty, resource available" << endl;
-                    m_available = true;
-                }
+                unallocate();
             }
         }
 
-        bool submitRequest(IOEvent& ioEvent, Process& proc)
+        bool submitRequest(const unsigned int& eventId, const unsigned int& duration, Process* proc)
         {
             bool success;
             if (m_available)
             {
-                cout << "resource available, processing request..." << endl;
-                m_pending = make_pair(ResourceRequest(ioEvent.id, proc.id, m_resourceId, ioEvent.dur), &proc);
-                proc.otherResourcesIds.push_back(m_resourceId);
+                m_pending = make_pair(ResourceRequest(eventId, proc->id, duration), proc);
+                proc->otherResourcesIds.push_back(m_resourceId);
                 m_available = false;
 
                 success = true;
             }
             else
             {
-                cout << "resource is unavailable, adding to wait list" << endl;
-                m_waitingList.push_back(make_pair(ResourceRequest(ioEvent.id, proc.id, m_resourceId, ioEvent.dur), &proc));
+                m_waitingList.push_back(make_pair(ResourceRequest(eventId, proc->id, duration), proc));
 
                 success = false;
             }
             return success;
         }
 
+        void unallocateResource()
+        {
+            if (!m_available)
+            {
+                m_waitingList.push_back(m_pending);
+                
+                unallocate();
+            }
+        }
+
         inline bool isAvailable() { return m_available; }
         inline int getProcessId() { return m_pending.first.procID; }
-        inline void getWaitingProcesses(vector<int>& waiting)
+        inline void getWaitingProcesses(vector<unsigned int>& waiting)
         {
             list<pair<ResourceRequest, Process*>>::iterator it;
             for (it = m_waitingList.begin(); it != m_waitingList.end(); ++it)
@@ -88,6 +85,33 @@ class Resource
         bool m_available = true;
         list<pair<ResourceRequest, Process*>> m_waitingList;
         unsigned int m_resourceId;
+
+        vector<Process*>& m_allocatedProcesses;
+
+        void unallocate()
+        {
+            vector<int>::iterator rescPos = m_pending.second->otherResourcesIds.begin();
+            // find the resource in the otherResource vector in the pcb
+            while (rescPos != m_pending.second->otherResourcesIds.end() && static_cast<unsigned int>(*rescPos) != m_resourceId) { rescPos++; }
+            // remove the resource from the list of resources the process has allocated to it
+            m_pending.second->otherResourcesIds.erase(rescPos);
+
+            // if there are other processes waiting, allocate the resource to the next process in the waitlist
+            if (!m_waitingList.empty())
+            {
+
+                // allocate the next process in the waiting list
+                m_pending = m_waitingList.front();
+                m_allocatedProcesses.push_back(m_waitingList.front().second);
+                m_waitingList.front().second->otherResourcesIds.push_back(m_resourceId);
+                m_waitingList.pop_front();
+            }
+            // otherwise, this resource is free
+            else
+            {
+                m_available = true;
+            }
+        }
 };
 
 void printResources(vector<Resource>& resourceVect);
